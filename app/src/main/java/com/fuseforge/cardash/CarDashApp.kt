@@ -3,11 +3,12 @@ package com.fuseforge.cardash
 import android.app.Application
 import com.fuseforge.cardash.data.PreferencesManager
 import com.fuseforge.cardash.data.db.AppDatabase
+import com.fuseforge.cardash.data.db.DTCDataSeeder
 import com.fuseforge.cardash.services.obd.BluetoothManager
 import com.fuseforge.cardash.services.obd.OBDService
 import com.fuseforge.cardash.services.obd.OBDServiceWithDiagnostics
-import com.fuseforge.cardash.utils.MockDataGenerator
-import com.fuseforge.cardash.utils.MockDiagnosticGenerator
+import com.fuseforge.cardash.services.obd.PollingEngine
+import com.fuseforge.cardash.services.sensors.SensorCollector
 import com.fuseforge.cardash.utils.OBDLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,13 +46,20 @@ class CarDashApp : Application() {
     val obdServiceDiagnostics: OBDServiceWithDiagnostics by lazy {
         OBDServiceWithDiagnostics(obdService, applicationContext)
     }
-    
-    val mockDataGenerator: MockDataGenerator by lazy {
-        MockDataGenerator(applicationContext)
+
+    val sensorCollector: SensorCollector by lazy {
+        SensorCollector(applicationContext)
     }
-    
-    val mockDiagnosticGenerator: MockDiagnosticGenerator by lazy {
-        MockDiagnosticGenerator(applicationContext)
+
+    val pollingEngine: PollingEngine by lazy {
+        PollingEngine(
+            obdService = obdService,
+            obdServiceWithDiagnostics = obdServiceDiagnostics,
+            sensorCollector = sensorCollector,
+            preferences = preferencesManager,
+            obdLogDao = database.obdLogDao(),
+            externalScope = applicationScope
+        )
     }
     
     override fun onCreate() {

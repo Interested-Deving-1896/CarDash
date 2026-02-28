@@ -12,8 +12,8 @@ android {
         applicationId = "com.fuseforge.cardash"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 7
+        versionName = "1.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
@@ -83,6 +83,9 @@ dependencies {
     
     // Android Auto
     implementation(libs.androidx.car.app)
+    
+    // Play Services Location
+    implementation("com.google.android.gms:play-services-location:21.0.1")
     
     // OBD-Java-API for OBD2 communication
     implementation("com.github.eltonvs:kotlin-obd-api:1.3.0")

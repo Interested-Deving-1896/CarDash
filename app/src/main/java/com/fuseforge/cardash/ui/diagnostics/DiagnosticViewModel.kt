@@ -12,8 +12,7 @@ import com.fuseforge.cardash.CarDashApp
 import com.fuseforge.cardash.data.db.AppDatabase
 import com.fuseforge.cardash.data.db.OBDDataType
 import com.fuseforge.cardash.data.db.OBDLogEntry
-import com.fuseforge.cardash.data.db.OBDSession
-import com.fuseforge.cardash.utils.MockDiagnosticGenerator
+import com.fuseforge.cardash.data.db.Trip
 import com.fuseforge.cardash.utils.OBDLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,12 +32,12 @@ class DiagnosticViewModel(private val context: Context) : ViewModel() {
     private val dao = AppDatabase.getDatabase(context).obdLogDao()
     private val obdLogger = (context.applicationContext as CarDashApp).obdLogger
     
-    // Selected session
-    private val _selectedSession = MutableStateFlow<OBDSession?>(null)
-    val selectedSession: StateFlow<OBDSession?> = _selectedSession
+    // Selected trip
+    private val _selectedSession = MutableStateFlow<Trip?>(null)
+    val selectedSession: StateFlow<Trip?> = _selectedSession
     
-    // All sessions
-    val sessions = dao.getAllSessions()
+    // All trips
+    val sessions = dao.getAllTrips()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -55,7 +54,7 @@ class DiagnosticViewModel(private val context: Context) : ViewModel() {
     
     // Get all logs based on session, data types, and error filter
     val logs = combine(
-        dao.getAllSessions().stateIn(
+        dao.getAllTrips().stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
@@ -65,7 +64,7 @@ class DiagnosticViewModel(private val context: Context) : ViewModel() {
         _showOnlyErrors
     ) { allSessions, selectedSession, dataTypes, onlyErrors ->
         // Start with all logs or session-specific logs
-        val sessionId = selectedSession?.sessionId
+        val sessionId = selectedSession?.tripId
         val baseFlow = if (sessionId != null) {
             // Specific session selected
             dao.getSessionLogs(sessionId).first()
@@ -75,7 +74,7 @@ class DiagnosticViewModel(private val context: Context) : ViewModel() {
         } else {
             // No specific session selected, but sessions exist
             allSessions.flatMap { session ->
-                dao.getSessionLogs(session.sessionId).first()
+                dao.getSessionLogs(session.tripId).first()
             }
         }
         
@@ -91,7 +90,7 @@ class DiagnosticViewModel(private val context: Context) : ViewModel() {
     )
     
     // Session selection
-    fun selectSession(session: OBDSession?) {
+    fun selectSession(session: Trip?) {
         _selectedSession.value = session
     }
     
@@ -161,14 +160,6 @@ class DiagnosticViewModel(private val context: Context) : ViewModel() {
     fun formatTimestamp(date: Date): String {
         val formatter = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
         return formatter.format(date)
-    }
-    
-    // Generate test data
-    fun generateTestData() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val mockGenerator = MockDiagnosticGenerator(context)
-            mockGenerator.generateMockDiagnosticLogs(50)
-        }
     }
 }
 

@@ -59,7 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fuseforge.cardash.data.db.OBDDataType
 import com.fuseforge.cardash.data.db.OBDLogEntry
-import com.fuseforge.cardash.data.db.OBDSession
+import com.fuseforge.cardash.data.db.Trip
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -124,7 +124,7 @@ fun LogViewerScreen(
                                 }
                             )
                             
-                            sessions.forEach { session: OBDSession ->
+                            sessions.forEach { session: Trip ->
                                 DropdownMenuItem(
                                     text = { 
                                         Text(
@@ -212,14 +212,6 @@ fun LogViewerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text("No logs found for the selected criteria")
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        androidx.compose.material3.Button(
-                            onClick = { viewModel.generateTestData() }
-                        ) {
-                            Text("Generate Test Data")
-                        }
                     }
                 }
             } else {

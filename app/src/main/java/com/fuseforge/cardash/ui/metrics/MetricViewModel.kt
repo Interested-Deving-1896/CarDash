@@ -16,31 +16,24 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Date
 import com.fuseforge.cardash.data.db.AppDatabase
 
+import com.fuseforge.cardash.services.obd.PollingEngine
+
 class MetricViewModel(
     private val obdService: OBDService,
-    private val obdServiceWithDiagnostics: OBDServiceWithDiagnostics
+    private val obdServiceWithDiagnostics: OBDServiceWithDiagnostics,
+    private val pollingEngine: PollingEngine
 ) : ViewModel() {
 
     // Get application context from the OBD service
     private val context = obdServiceWithDiagnostics.getContext()
     
     // Initialize preferences
-    private val preferences = AppPreferences(context)
-
-    // Database access for storing combined readings
-    private val database = AppDatabase.getDatabase(context)
-    private val obdLogDao = database.obdLogDao()
-    
-    // Last time we stored a combined reading (to avoid too frequent writes)
-    private var lastCombinedReadingTime = System.currentTimeMillis() - 5000 // Start 5 seconds ago
-    
-    // Initialize the sequential poller (will be set up after connection)
-    private lateinit var sequentialPoller: SequentialMetricPoller
+    private val preferences = (context.applicationContext as com.fuseforge.cardash.CarDashApp).preferencesManager
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState = _connectionState.asStateFlow()
 
-    // Add engine state tracking
+    // Engine state tracking
     private val _engineRunning = MutableStateFlow(false)
     val engineRunning = _engineRunning.asStateFlow()
 
@@ -74,7 +67,24 @@ class MetricViewModel(
     private val _batteryVoltage = MutableStateFlow(0f)
     val batteryVoltage = _batteryVoltage.asStateFlow()
     
-    // New metrics from database - simplified
+    private val _speedGps = MutableStateFlow(0)
+    val speedGps = _speedGps.asStateFlow()
+
+    private val _latitude = MutableStateFlow<Double?>(null)
+    val latitude = _latitude.asStateFlow()
+
+    private val _longitude = MutableStateFlow<Double?>(null)
+    val longitude = _longitude.asStateFlow()
+
+    private val _gForceX = MutableStateFlow(0f)
+    val gForceX = _gForceX.asStateFlow()
+
+    private val _gForceY = MutableStateFlow(0f)
+    val gForceY = _gForceY.asStateFlow()
+
+    private val _gForceZ = MutableStateFlow(0f)
+    val gForceZ = _gForceZ.asStateFlow()
+    
     private val _averageSpeed = MutableStateFlow(0)
     val averageSpeed = _averageSpeed.asStateFlow()
     
@@ -85,8 +95,46 @@ class MetricViewModel(
     val errorMessage = _errorMessage.asSharedFlow()
     
     // Logging preference flow for UI
-    private val _verboseLoggingEnabled = MutableStateFlow(preferences.verboseLoggingEnabled)
+    private val _verboseLoggingEnabled = MutableStateFlow(preferences.isVerboseLoggingEnabled())
     val verboseLoggingEnabled = _verboseLoggingEnabled.asStateFlow()
+
+    init {
+        // Observe connection status from OBDService
+        obdService.connectionStatus
+            .onEach { status ->
+                _connectionState.value = when(status) {
+                    com.fuseforge.cardash.services.obd.ConnectionStatus.CONNECTED -> ConnectionState.Connected
+                    com.fuseforge.cardash.services.obd.ConnectionStatus.CONNECTING -> ConnectionState.Connecting
+                    com.fuseforge.cardash.services.obd.ConnectionStatus.RECONNECTING -> ConnectionState.Connecting
+                    com.fuseforge.cardash.services.obd.ConnectionStatus.ERROR -> ConnectionState.Failed("Connection failed")
+                    com.fuseforge.cardash.services.obd.ConnectionStatus.DISCONNECTED -> ConnectionState.Disconnected
+                }
+            }
+            .launchIn(viewModelScope)
+
+        // Observe data from PollingEngine
+        pollingEngine.dataFlow
+            .onEach { point ->
+                _rpm.value = point.rpm ?: 0
+                _speed.value = point.speedObd ?: 0
+                _engineLoad.value = point.engineLoad ?: 0
+                _coolantTemp.value = point.coolantTemp ?: 0
+                _fuelLevel.value = point.fuelLevel ?: 0
+                _intakeAirTemp.value = point.intakeAirTemp ?: 0
+                _throttlePosition.value = point.throttlePosition ?: 0
+                _fuelPressure.value = point.fuelPressure ?: 0
+                _baroPressure.value = point.baroPressure ?: 0
+                _batteryVoltage.value = point.batteryVoltage ?: 0f
+                _speedGps.value = point.speedGps ?: 0
+                _latitude.value = point.latitude
+                _longitude.value = point.longitude
+                _gForceX.value = point.gForceX ?: 0f
+                _gForceY.value = point.gForceY ?: 0f
+                _gForceZ.value = point.gForceZ ?: 0f
+                _engineRunning.value = (point.engineLoad ?: 0) > 0
+            }
+            .launchIn(viewModelScope)
+    }
 
     /**
      * Connect to OBD device and start data collection
@@ -96,41 +144,15 @@ class MetricViewModel(
             _connectionState.value = ConnectionState.Connecting
             _errorMessage.emit("Connecting to $deviceAddress...")
             
-            when (val result = obdService.connect(deviceAddress)) {
-                is OBDService.ConnectionResult.Success -> {
-                    _connectionState.value = ConnectionState.Connected
-                    _errorMessage.emit("Successfully connected to OBD2 adapter")
-                    
-                    // Initialize sequential poller
-                    sequentialPoller = SequentialMetricPoller(
-                        obdService = obdService,
-                        obdServiceWithDiagnostics = obdServiceWithDiagnostics,
-                        preferences = preferences,
-                        obdLogDao = obdLogDao,
-                        viewModelScope = viewModelScope,
-                        connectionState = _connectionState,
-                        engineRunning = _engineRunning,
-                        rpm = _rpm,
-                        speed = _speed,
-                        engineLoad = _engineLoad,
-                        coolantTemp = _coolantTemp,
-                        fuelLevel = _fuelLevel,
-                        intakeAirTemp = _intakeAirTemp,
-                        throttlePosition = _throttlePosition,
-                        fuelPressure = _fuelPressure,
-                        baroPressure = _baroPressure,
-                        batteryVoltage = _batteryVoltage,
-                        errorMessage = _errorMessage
-                    )
-                    
-                    // Start polling metrics
-                    sequentialPoller.startPolling()
-                }
-                is OBDService.ConnectionResult.Error -> {
-                    println("Connection failed: ${result.message}")
-                    _connectionState.value = ConnectionState.Failed(result.message)
-                    _errorMessage.emit("Connection error: ${result.message}")
-                }
+            // Connection is handled by CaseDashDataCollectorService on real device, 
+            // but for UI flow we still call obdService.connect or trigger the service.
+            // Here we keep it simple by calling obdService.connect which PollingEngine observes.
+            val result = obdService.connect(deviceAddress)
+            if (result is OBDService.ConnectionResult.Success) {
+                // Polling engine is started by the Service, but we can also start it here if needed
+                pollingEngine.start()
+            } else if (result is OBDService.ConnectionResult.Error) {
+                _errorMessage.emit("Connection error: ${result.message}")
             }
         }
     }
@@ -140,16 +162,10 @@ class MetricViewModel(
      */
     fun disconnect() {
         viewModelScope.launch {
-            // Stop the sequential poller if it's initialized
-            if (::sequentialPoller.isInitialized) {
-                sequentialPoller.stopPolling()
-            }
-            
-            // Disconnect from OBD
+            pollingEngine.stop()
             obdService.disconnect()
             
             // Reset all state values
-            _connectionState.value = ConnectionState.Disconnected
             _engineRunning.value = false
             _rpm.value = 0
             _engineLoad.value = 0
@@ -162,7 +178,6 @@ class MetricViewModel(
             _baroPressure.value = 0
             _batteryVoltage.value = 0f
             _averageSpeed.value = 0
-            // Note: we don't clear fuel history so it stays visible even when disconnected
         }
     }
 
@@ -186,7 +201,7 @@ class MetricViewModel(
      * Toggle verbose logging setting
      */
     fun toggleVerboseLogging(enabled: Boolean) {
-        preferences.verboseLoggingEnabled = enabled
+        preferences.setVerboseLoggingEnabled(enabled)
         _verboseLoggingEnabled.value = enabled
     }
     
@@ -194,8 +209,8 @@ class MetricViewModel(
      * Set data collection frequency
      */
     fun setDataCollectionFrequency(frequencyMs: Int) {
-        if (frequencyMs in 1000..10000) { // Reasonable range check
-            preferences.dataCollectionFrequencyMs = frequencyMs
+        if (frequencyMs in 100..10000) { // Reasonable range check
+            preferences.updateDataCollectionFrequency(frequencyMs)
         }
     }
     
@@ -203,8 +218,8 @@ class MetricViewModel(
      * Set storage frequency
      */
     fun setStorageFrequency(frequencyMs: Int) {
-        if (frequencyMs in 3000..30000) { // Reasonable range check
-            preferences.storageFrequencyMs = frequencyMs
+        if (frequencyMs in 1000..60000) { // Reasonable range check
+            preferences.updateStorageFrequency(frequencyMs)
         }
     }
 

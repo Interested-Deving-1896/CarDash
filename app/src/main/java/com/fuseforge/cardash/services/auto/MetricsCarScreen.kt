@@ -29,6 +29,7 @@ import com.github.eltonvs.obd.command.ObdCommand
 import com.github.eltonvs.obd.command.ObdResponse
 import com.github.eltonvs.obd.command.control.TroubleCodesCommand
 import com.github.eltonvs.obd.command.fuel.FuelLevelCommand
+import android.util.Log
 
 class MetricsCarScreen(carContext: CarContext) : Screen(carContext) {
 
@@ -56,7 +57,7 @@ class MetricsCarScreen(carContext: CarContext) : Screen(carContext) {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 super.onStart(owner)
-
+                
                 // Fetch services here, as they might be initialized lazily by CarDashApp
                 val app = carContext.applicationContext as CarDashApp
                 obdService = app.obdServiceDiagnostics.getOBDService()
@@ -105,78 +106,18 @@ class MetricsCarScreen(carContext: CarContext) : Screen(carContext) {
                         // If not, the connection attempt block will run.
                     }
 
-                    // Cancel any previous job
-                    metricsUpdateJob?.cancel()
-
-                    // Subscribe to each metric flow individually
-                    service.speedFlow.onEach { value ->
-                        speed = value?.toString() ?: "--"
-                        invalidate()
-                    }.launchIn(lifecycleScope)
-
-                    service.rpmFlow.onEach { value ->
-                        rpm = value?.toString() ?: "--"
-                        invalidate()
-                    }.launchIn(lifecycleScope)
-
-                    service.coolantTempFlow.onEach { value ->
-                        coolantTemp = value?.let { "$it°C" } ?: "--"
-                        invalidate()
-                    }.launchIn(lifecycleScope)
-
-                    service.engineLoadFlow.onEach { value ->
-                        engineLoad = try {
-                            value?.let { String.format(Locale.US, "%.1f%%", it.toFloat()) } ?: "--"
-                        } catch (e: NumberFormatException) {
-                            println("MetricsCarScreen: Error formatting engineLoad: $value - ${e.message}")
-                            "--"
-                        }
-                        invalidate()
-                    }.launchIn(lifecycleScope)
-
-                    service.fuelLevelFlow.onEach { value ->
-                        fuelLevel = try {
-                            value?.let { String.format(Locale.US, "%.1f%%", it.toFloat()) } ?: "--"
-                        } catch (e: NumberFormatException) {
-                            println("MetricsCarScreen: Error formatting fuelLevel: $value - ${e.message}")
-                            "--"
-                        }
-                        invalidate()
-                    }.launchIn(lifecycleScope)
-
-                    service.throttlePositionFlow.onEach { value ->
-                        throttlePos = try {
-                            value?.let { String.format(Locale.US, "%.1f%%", it.toFloat()) } ?: "--"
-                        } catch (e: NumberFormatException) {
-                            println("MetricsCarScreen: Error formatting throttlePos: $value - ${e.message}")
-                            "--"
-                        }
-                        invalidate()
-                    }.launchIn(lifecycleScope)
-
-                    service.intakeAirTempFlow.onEach { value ->
-                        intakeAirTemp = value?.let { "$it°C" } ?: "--"
-                        invalidate()
-                    }.launchIn(lifecycleScope)
-
-                    service.fuelPressureFlow.onEach { value ->
-                        fuelPressure = value?.toString() ?: "--"
-                        invalidate()
-                    }.launchIn(lifecycleScope)
-
-                    service.baroPressureFlow.onEach { value ->
-                        baroPressure = value?.toString() ?: "--"
-                        invalidate()
-                    }.launchIn(lifecycleScope)
-
-                    service.batteryVoltageFlow.onEach { value ->
-                        moduleVoltage = try {
-                            // Assuming batteryVoltageFlow emits Float, not String needing toFloat()
-                            value?.let { String.format(Locale.US, "%.1fV", it) } ?: "--" 
-                        } catch (e: Exception) { // Broader catch if `value` itself is problematic before formatting
-                            println("MetricsCarScreen: Error formatting moduleVoltage: $value - ${e.message}")
-                            "--"
-                        }
+                    // Subscribe to the unified PollingEngine dataFlow
+                    app.pollingEngine.dataFlow.onEach { point ->
+                        speed = point.speedObd?.toString() ?: "--"
+                        rpm = point.rpm?.toString() ?: "--"
+                        coolantTemp = point.coolantTemp?.let { "$it°C" } ?: "--"
+                        engineLoad = point.engineLoad?.let { String.format(Locale.US, "%.1f%%", it.toFloat()) } ?: "--"
+                        fuelLevel = point.fuelLevel?.let { String.format(Locale.US, "%.1f%%", it.toFloat()) } ?: "--"
+                        throttlePos = point.throttlePosition?.let { String.format(Locale.US, "%.1f%%", it.toFloat()) } ?: "--"
+                        intakeAirTemp = point.intakeAirTemp?.let { "$it°C" } ?: "--"
+                        fuelPressure = point.fuelPressure?.toString() ?: "--"
+                        baroPressure = point.baroPressure?.toString() ?: "--"
+                        moduleVoltage = point.batteryVoltage?.let { String.format(Locale.US, "%.1fV", it) } ?: "--"
                         invalidate()
                     }.launchIn(lifecycleScope)
                 }

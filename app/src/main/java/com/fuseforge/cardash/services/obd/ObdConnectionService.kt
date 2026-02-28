@@ -84,10 +84,10 @@ class ObdConnectionService(private val context: Context) {
         return bluetoothManager.isBluetoothEnabled()
     }
 
-    val coolantTempFlow: Flow<Int> = obdService.coolantTempFlow
+    // val coolantTempFlow: Flow<Int> = obdService.coolantTempFlow
 
     private suspend fun getCoolantTemp(): Int {
-        return obdService.getCoolantTemp()
+        return obdService.parseCoolantTempResponse(obdService.sendCommand(OBDService.COOLANT_TEMP_COMMAND))
     }
 
     sealed class ConnectionResult {

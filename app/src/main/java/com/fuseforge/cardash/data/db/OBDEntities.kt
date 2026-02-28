@@ -44,34 +44,45 @@ enum class OBDDataType {
     UNKNOWN
 }
 
-@Entity(tableName = "obd_sessions")
+@Entity(tableName = "trips")
 @TypeConverters(DateConverter::class)
-data class OBDSession(
+data class Trip(
     @PrimaryKey
-    val sessionId: String,
+    val tripId: String,
+    val vehicleId: String? = null,
     val deviceAddress: String,
     val deviceName: String?,
     val startTime: Date = Date(),
     val endTime: Date? = null,
-    val isActive: Boolean = true,
+    val startLatitude: Double? = null,
+    val startLongitude: Double? = null,
+    val endLatitude: Double? = null,
+    val endLongitude: Double? = null,
+    val maxSpeed: Int? = null,
+    val maxRpm: Int? = null,
+    val maxTemp: Int? = null,
     val vehicleInfo: String? = null
 )
 
 /**
- * This entity represents a single "row" of OBD data with all parameters collected at a specific time.
- * It's used for historical data display.
+ * This entity represents a single "row" of OBD data paired with location.
  */
-@Entity(tableName = "obd_combined_readings")
+@Entity(tableName = "trip_data_points")
 @TypeConverters(DateConverter::class)
-data class OBDCombinedReading(
+data class TripDataPoint(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val timestamp: Date = Date(),
-    val sessionId: String,
+    val tripId: String,
     
+    // GPS Context
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+
     // Vehicle parameters
+    val speedObd: Int? = null,
+    val speedGps: Int? = null,
     val rpm: Int? = null,
-    val speed: Int? = null,
     val engineLoad: Int? = null,
     val coolantTemp: Int? = null,
     val fuelLevel: Int? = null,
@@ -79,5 +90,25 @@ data class OBDCombinedReading(
     val throttlePosition: Int? = null,
     val fuelPressure: Int? = null,
     val baroPressure: Int? = null,
-    val batteryVoltage: Float? = null
+    val batteryVoltage: Float? = null,
+    val maf: Float? = null,
+    val ambientAirTemp: Int? = null,
+    
+    // IMU Context
+    val gForceX: Float? = null,
+    val gForceY: Float? = null,
+    val gForceZ: Float? = null
+)
+
+/**
+ * Entity for Diagnostic Trouble Code (DTC) translations.
+ * Allows offline fault description lookups.
+ */
+@Entity(tableName = "diagnostic_codes")
+data class DiagnosticCode(
+    @PrimaryKey
+    val code: String, // e.g. "P0300"
+    val description: String, // e.g. "Random or Multiple Cylinder Misfire Detected"
+    val possibleCauses: String? = null,
+    val severity: Int = 1 // 1: Info, 2: Warning, 3: Critical
 )

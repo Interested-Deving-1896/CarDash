@@ -14,6 +14,8 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.asStateFlow
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import com.fuseforge.cardash.data.db.DiagnosticCode
+import com.fuseforge.cardash.data.db.DiagnosticDao
 
 /**
  * Data class representing an OBD command with callback
@@ -77,125 +79,14 @@ class OBDService(
     // Job for the command processor
     private var commandProcessorJob: Job? = null
 
-    // Engine Load polling flow  
-    val engineLoadFlow: Flow<Int> = createParameterFlow(
-        ENGINE_LOAD_COMMAND,
-        OBDDataType.ENGINE_LOAD,
-        1000
-    ) { response -> parseEngineLoadResponse(response) }
+    // Removed individual Flows: engineLoadFlow, rpmFlow, speedFlow, coolantTempFlow, 
+    // fuelLevelFlow, intakeAirTempFlow, throttlePositionFlow, fuelPressureFlow, 
+    // baroPressureFlow, batteryVoltageFlow, mafFlow, ambientAirTempFlow.
+    // These are now handled by the PollingEngine.
 
-    // RPM polling flow
-    val rpmFlow: Flow<Int> = createParameterFlow(
-        "01 0C", 
-        OBDDataType.RPM,
-        500
-    ) { response -> parseRPMResponse(response) }
 
-    val speedFlow: Flow<Int> = createParameterFlow(
-        SPEED_COMMAND,
-        OBDDataType.SPEED,
-        1000
-    ) { response -> parseSpeedResponse(response) }
-    
-    val coolantTempFlow: Flow<Int> = createParameterFlow(
-        COOLANT_TEMP_COMMAND,
-        OBDDataType.COOLANT_TEMP,
-        2000
-    ) { response -> parseCoolantTempResponse(response) }
-    
-    val fuelLevelFlow: Flow<Int> = createParameterFlow(
-        FUEL_LEVEL_COMMAND,
-        OBDDataType.FUEL_LEVEL,
-        5000
-    ) { response -> parseFuelLevelResponse(response) }
-    
-    val intakeAirTempFlow: Flow<Int> = createParameterFlow(
-        INTAKE_AIR_TEMP_COMMAND,
-        OBDDataType.INTAKE_AIR_TEMP,
-        2000
-    ) { response -> parseIntakeAirTempResponse(response) }
-    
-    val throttlePositionFlow: Flow<Int> = createParameterFlow(
-        THROTTLE_POSITION_COMMAND,
-        OBDDataType.THROTTLE_POSITION,
-        1000
-    ) { response -> parseThrottlePositionResponse(response) }
-    
-    val fuelPressureFlow: Flow<Int> = createParameterFlow(
-        FUEL_PRESSURE_COMMAND,
-        OBDDataType.FUEL_PRESSURE,
-        2000
-    ) { response -> parseFuelPressureResponse(response) }
-    
-    val baroPressureFlow: Flow<Int> = createParameterFlow(
-        BARO_PRESSURE_COMMAND,
-        OBDDataType.BARO_PRESSURE,
-        5000
-    ) { response -> parseBaroPressureResponse(response) }
-    
-    val batteryVoltageFlow: Flow<Float> = createParameterFlow(
-        BATTERY_VOLTAGE_COMMAND,
-        OBDDataType.BATTERY_VOLTAGE,
-        5000
-    ) { response -> parseBatteryVoltageResponse(response) }
+    // Generic createParameterFlow function removed.
 
-    val mafFlow: Flow<Float> = createParameterFlow(
-        MAF_COMMAND,
-        OBDDataType.MAF,
-        1000 // Polling interval, adjust as needed
-    ) { response -> parseMafResponse(response) }
-
-    val ambientAirTempFlow: Flow<Int> = createParameterFlow(
-        AMBIENT_AIR_TEMP_COMMAND,
-        OBDDataType.AMBIENT_AIR_TEMP,
-        5000 // Polling interval, adjust as needed
-    ) { response -> parseAmbientAirTempResponse(response) }
-
-    /**
-     * Generic function to create a parameter flow
-     */
-    private fun <T> createParameterFlow(
-        command: String,
-        dataType: OBDDataType,
-        pollingIntervalMs: Long,
-        parser: (String) -> T
-    ): Flow<T> = callbackFlow {
-        val job = ioScope.launch {
-            while (isRunning.get() && isActive) {
-                if (_connectionStatus.value != ConnectionStatus.CONNECTED) {
-                    delay(pollingIntervalMs)
-                    continue
-                }
-                try {
-                    val resultWrapper = enqueueSendCommand(command, dataType)
-                    resultWrapper.fold(
-                        onSuccess = {
-                            send(parser(it))
-                            resetConsecutiveErrorCount()
-                        },
-                        onFailure = { e ->
-                            println("Error in flow for ${dataType.name}: ${e.message}")
-                            handleCommandError(e)
-                        }
-                    )
-                } catch (e: CancellationException) {
-                    println("Flow for ${dataType.name} cancelled.")
-                    throw e
-                } catch (e: Exception) {
-                    println("Unexpected error in flow for ${dataType.name}: ${e.message}")
-                    handleCommandError(e)
-                }
-                if (isActive) {
-                   delay(pollingIntervalMs)
-                }
-            }
-        }
-        
-        awaitClose {
-            println("Flow for ${dataType.name} closing.")
-            job.cancel()
-        }
-    }.shareIn(ioScope, SharingStarted.WhileSubscribed(), replay = 1)
 
     sealed class ConnectionResult {
         data object Success : ConnectionResult()
@@ -451,6 +342,8 @@ class OBDService(
         const val BATTERY_VOLTAGE_COMMAND = "01 42"
         const val MAF_COMMAND = "01 10"                     // Added MAF command
         const val AMBIENT_AIR_TEMP_COMMAND = "01 46"        // Added Ambient Air Temp command
+        const val TROUBLE_CODES_COMMAND = "03"             // Show stored trouble codes
+        const val READ_VOLTAGE_COMMAND = "AT RV"           // ELM327 Voltage
     }
 
     suspend fun getEngineLoad(): Int {
@@ -458,7 +351,7 @@ class OBDService(
         return parseEngineLoadResponse(responseResult.getOrThrow())
     }
 
-    private fun parseEngineLoadResponse(response: String): Int {
+    fun parseEngineLoadResponse(response: String): Int {
         // Look for the pattern "41 04 XX" where XX is the hex value
         val pattern = "(?:41 04|4104) ?([0-9A-F]{2})".toRegex(RegexOption.IGNORE_CASE)
         val matchResult = pattern.find(response)
@@ -484,7 +377,7 @@ class OBDService(
         return hexValue.toIntOrNull(16) ?: 0  // Speed in km/h
     }
 
-    private fun parseRPMResponse(response: String): Int {
+    fun parseRPMResponse(response: String): Int {
         // Look for the pattern "41 0C XX YY" where XX and YY are hex values
         val pattern = "(?:41 0C|410C) ?([0-9A-F]{2}) ?([0-9A-F]{2})".toRegex(RegexOption.IGNORE_CASE)
         val matchResult = pattern.find(response)
@@ -493,7 +386,9 @@ class OBDService(
         val (hexA, hexB) = matchResult.destructured
         val byteA = hexA.toIntOrNull(16) ?: 0
         val byteB = hexB.toIntOrNull(16) ?: 0
-        return ((byteA * 256) + byteB) / 4  // Standard formula
+        val value = ((byteA * 256) + byteB) / 4  // Standard formula
+        println("Parsed RPM: $value from hex $hexA $hexB")
+        return value
     }
 
     suspend fun getCoolantTemp(): Int {
@@ -501,7 +396,7 @@ class OBDService(
         return parseCoolantTempResponse(responseResult.getOrThrow())
     }
 
-    private fun parseCoolantTempResponse(response: String): Int {
+    fun parseCoolantTempResponse(response: String): Int {
         // Look for the pattern "41 05 XX" where XX is the hex value
         val pattern = "(?:41 05|4105) ?([0-9A-F]{2})".toRegex(RegexOption.IGNORE_CASE)
         val matchResult = pattern.find(response)
@@ -517,7 +412,7 @@ class OBDService(
         return parseFuelLevelResponse(responseResult.getOrThrow())
     }
 
-    private fun parseFuelLevelResponse(response: String): Int {
+    fun parseFuelLevelResponse(response: String): Int {
         // Look for the pattern "41 2F XX" where XX is the hex value
         val pattern = "(?:41 2F|412F) ?([0-9A-F]{2})".toRegex(RegexOption.IGNORE_CASE)
         val matchResult = pattern.find(response)
@@ -533,7 +428,7 @@ class OBDService(
         return parseIntakeAirTempResponse(responseResult.getOrThrow())
     }
 
-    private fun parseIntakeAirTempResponse(response: String): Int {
+    fun parseIntakeAirTempResponse(response: String): Int {
         // Look for the pattern "41 0F XX" where XX is the hex value
         val pattern = "(?:41 0F|410F) ?([0-9A-F]{2})".toRegex(RegexOption.IGNORE_CASE)
         val matchResult = pattern.find(response)
@@ -549,7 +444,7 @@ class OBDService(
         return parseThrottlePositionResponse(responseResult.getOrThrow())
     }
 
-    private fun parseThrottlePositionResponse(response: String): Int {
+    fun parseThrottlePositionResponse(response: String): Int {
         // Look for the pattern "41 11 XX" where XX is the hex value
         val pattern = "(?:41 11|4111) ?([0-9A-F]{2})".toRegex(RegexOption.IGNORE_CASE)
         val matchResult = pattern.find(response)
@@ -565,7 +460,7 @@ class OBDService(
         return parseFuelPressureResponse(responseResult.getOrThrow())
     }
 
-    private fun parseFuelPressureResponse(response: String): Int {
+    fun parseFuelPressureResponse(response: String): Int {
         println("Raw fuel pressure response: $response")
         
         try {
@@ -628,19 +523,44 @@ class OBDService(
     }
 
     suspend fun getBatteryVoltage(): Float {
-        val responseResult = enqueueSendCommand(BATTERY_VOLTAGE_COMMAND, OBDDataType.BATTERY_VOLTAGE)
-        return parseBatteryVoltageResponse(responseResult.getOrThrow())
+        return try {
+            val responseResult = enqueueSendCommand(BATTERY_VOLTAGE_COMMAND, OBDDataType.BATTERY_VOLTAGE)
+            parseBatteryVoltageResponse(responseResult.getOrThrow())
+        } catch (e: Exception) {
+            println("OBDService: PID 01 42 failed, falling back to AT RV: ${e.message}")
+            getNativeVoltage()
+        }
     }
 
-    private fun parseBatteryVoltageResponse(response: String): Float {
-        // Look for the pattern "41 42 XX" where XX is the hex value
-        val pattern = "(?:41 42|4142) ?([0-9A-F]{2})".toRegex(RegexOption.IGNORE_CASE)
+    suspend fun getNativeVoltage(): Float {
+        return try {
+            val response = sendCommand(READ_VOLTAGE_COMMAND)
+            parseNativeVoltageResponse(response)
+        } catch (e: Exception) {
+            println("OBDService: Failed to get native voltage: ${e.message}")
+            0.0f
+        }
+    }
+
+    fun parseNativeVoltageResponse(response: String): Float {
+        // AT RV usually returns something like "12.6V"
+        val pattern = "([0-9]+\\.?[0-9]*)V?".toRegex(RegexOption.IGNORE_CASE)
+        val matchResult = pattern.find(response) ?: return 0.0f
+        return matchResult.groupValues[1].toFloatOrNull() ?: 0.0f
+    }
+
+    fun parseBatteryVoltageResponse(response: String): Float {
+        // PID 01 42: Control module voltage. Formula: (256A + B) / 1000
+        val pattern = "(?:41 42|4142) ?([0-9A-F]{2}) ?([0-9A-F]{2})".toRegex(RegexOption.IGNORE_CASE)
         val matchResult = pattern.find(response)
             ?: throw Exception("Invalid battery voltage response format: $response")
             
-        val hexValue = matchResult.groupValues[1]
-        val value = hexValue.toIntOrNull(16) ?: 0
-        return value / 10f  // Convert to volts
+        val (hexA, hexB) = matchResult.destructured
+        val byteA = hexA.toIntOrNull(16) ?: 0
+        val byteB = hexB.toIntOrNull(16) ?: 0
+        val volts = ((byteA * 256) + byteB) / 1000f
+        println("Parsed Battery Voltage: $volts V from hex $hexA $hexB")
+        return volts
     }
 
     suspend fun getBaroPressure(): Int {
@@ -648,7 +568,7 @@ class OBDService(
         return parseBaroPressureResponse(responseResult.getOrThrow())
     }
 
-    private fun parseBaroPressureResponse(response: String): Int {
+    fun parseBaroPressureResponse(response: String): Int {
         // Look for the pattern "41 33 XX" where XX is the hex value
         val pattern = "(?:41 33|4133) ?([0-9A-F]{2})".toRegex(RegexOption.IGNORE_CASE)
         val matchResult = pattern.find(response)
@@ -751,5 +671,81 @@ class OBDService(
             _connectionStatus.value = ConnectionStatus.ERROR
             disconnect()
         }
+    }
+    /**
+     * Scan for Diagnostic Trouble Codes (DTCs)
+     */
+    suspend fun scanTroubleCodes(diagnosticDao: DiagnosticDao): List<DiagnosticCode> {
+        return withContext(ioScope.coroutineContext) {
+            try {
+                val response = sendCommand(TROUBLE_CODES_COMMAND)
+                println("OBDService: DTC Response: $response")
+                val codes = parseTroubleCodes(response)
+                
+                // Hydrate with descriptions from database
+                codes.map { code ->
+                    diagnosticDao.getDiagnosticByCode(code) ?: DiagnosticCode(code, "Unknown Trouble Code", null, 2)
+                }
+            } catch (e: Exception) {
+                println("OBDService: Failed to scan DTCs: ${e.message}")
+                emptyList()
+            }
+        }
+    }
+
+    /**
+     * Parse Mode 03 response for DTCs
+     * Format: 43 XX YY ZZ ... (each code is 2 bytes)
+     */
+    fun parseTroubleCodes(response: String): List<String> {
+        val codes = mutableListOf<String>()
+        // Clean response and look for 43 (Mode 03 response header)
+        val cleaned = response.replace(" ", "").replace("\r", "").replace("\n", "").replace(">", "")
+        
+        if (!cleaned.startsWith("43")) return emptyList()
+        
+        // Skip header "43"
+        val data = cleaned.substring(2)
+        
+        // Parse in chunks of 4 hex chars (2 bytes per DTC)
+        for (i in 0 until data.length - 3 step 4) {
+            val hexCode = data.substring(i, i + 4)
+            if (hexCode == "0000") continue // Null code
+            
+            val dtc = convertHexToDtc(hexCode)
+            if (dtc.isNotEmpty()) codes.add(dtc)
+        }
+        
+        return codes.distinct()
+    }
+
+    /**
+     * Convert 2-byte hex to standard DTC format (e.g., P0300)
+     */
+    private fun convertHexToDtc(hex: String): String {
+        if (hex.length != 4) return ""
+        
+        val firstChar = hex[0]
+        val prefix = when (firstChar) {
+            '0' -> "P0"
+            '1' -> "P1"
+            '2' -> "P2"
+            '3' -> "P3"
+            '4' -> "C0"
+            '5' -> "C1"
+            '6' -> "C2"
+            '7' -> "C3"
+            '8' -> "B0"
+            '9' -> "B1"
+            'A' -> "B2"
+            'B' -> "B3"
+            'C' -> "U0"
+            'D' -> "U1"
+            'E' -> "U2"
+            'F' -> "U3"
+            else -> return ""
+        }
+        
+        return prefix + hex.substring(1)
     }
 }

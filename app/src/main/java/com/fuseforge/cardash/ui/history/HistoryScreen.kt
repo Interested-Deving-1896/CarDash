@@ -27,7 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.fuseforge.cardash.data.db.OBDCombinedReading
+import com.fuseforge.cardash.data.db.TripDataPoint
 import com.fuseforge.cardash.ui.theme.CarDashTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -61,15 +61,6 @@ fun HistoryScreen(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(16.dp)
                     )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Button to generate mock data
-                    Button(
-                        onClick = { viewModel.generateMockData() }
-                    ) {
-                        Text("Generate Test Data")
-                    }
                 }
             }
         } else {
@@ -125,7 +116,7 @@ fun TableHeader(parameters: List<ParameterInfo>) {
 
 @Composable
 fun TableRow(
-    reading: OBDCombinedReading,
+    reading: TripDataPoint,
     parameters: List<ParameterInfo>,
     isEven: Boolean
 ) {

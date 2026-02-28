@@ -25,6 +25,8 @@ class PreferencesManager(private val context: Context) {
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
         val LOG_RETENTION_DAYS = intPreferencesKey("log_retention_days")
         val DIAGNOSTIC_MODE = booleanPreferencesKey("diagnostic_mode")
+        val DATA_COLLECTION_FREQUENCY = intPreferencesKey("data_collection_frequency")
+        val STORAGE_FREQUENCY = intPreferencesKey("storage_frequency")
     }
     
     private val preferences: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -81,7 +83,31 @@ class PreferencesManager(private val context: Context) {
         }
         editor.apply()
     }
+
+    fun updateDataCollectionFrequency(frequencyMs: Int) {
+        preferences.edit().putInt("data_collection_frequency", frequencyMs).apply()
+    }
+
+    fun updateStorageFrequency(frequencyMs: Int) {
+        preferences.edit().putInt("storage_frequency", frequencyMs).apply()
+    }
+
+    fun setVerboseLoggingEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean("logging_enabled", enabled).apply()
+    }
+
+    fun isVerboseLoggingEnabled(): Boolean {
+        return preferences.getBoolean("logging_enabled", true)
+    }
     
+    fun getDataCollectionFrequency(): Long {
+        return preferences.getInt("data_collection_frequency", 500).toLong()
+    }
+
+    fun getStorageFrequency(): Long {
+        return preferences.getInt("storage_frequency", 5000).toLong()
+    }
+
     // Add other preference methods below as needed
     fun clearAllPreferences() {
         val editor = preferences.edit()

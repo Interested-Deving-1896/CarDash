@@ -43,6 +43,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -66,7 +69,9 @@ import android.content.pm.PackageManager
 import android.bluetooth.BluetoothDevice
 import com.fuseforge.cardash.services.obd.BluetoothManager
 import com.fuseforge.cardash.CarDashApp
-import com.fuseforge.cardash.ui.diagnostics.LogViewerScreen
+import com.fuseforge.cardash.ui.diagnostics.DiagnosticsScreen
+import com.fuseforge.cardash.ui.diagnostics.DiagnosticsViewModel
+import com.fuseforge.cardash.ui.diagnostics.DiagnosticsViewModelFactory
 import com.fuseforge.cardash.ui.graphs.GraphScreen
 import com.fuseforge.cardash.ui.history.HistoryScreen
 import com.fuseforge.cardash.ui.metrics.MetricGridScreen
@@ -82,6 +87,9 @@ import com.fuseforge.cardash.ui.theme.Error as ThemeError
 import com.fuseforge.cardash.ui.theme.Neutral
 import android.annotation.SuppressLint
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import android.location.LocationManager
+import android.content.Context
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalTextApi::class)
 @Composable
@@ -89,7 +97,7 @@ fun MainScreen(
     onPermissionNeeded: () -> Unit = {}
 ) {
     val app = LocalContext.current.applicationContext as CarDashApp
-    val factory = MetricViewModelFactory(app.obdService, app.obdServiceDiagnostics)
+    val factory = MetricViewModelFactory(app.obdService, app.obdServiceDiagnostics, app.pollingEngine)
     val viewModel: MetricViewModel = viewModel(factory = factory)
     val bluetoothManager = app.bluetoothManager
     
@@ -110,6 +118,9 @@ fun MainScreen(
     val connectionState by viewModel.connectionState.collectAsState()
     val engineRunning by viewModel.engineRunning.collectAsState()
     
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    
     // Create tabs list based on visibility settings
     val tabs = mutableListOf<String>()
     tabs.add("Metrics") // Always included
@@ -129,6 +140,25 @@ fun MainScreen(
                 ActivityCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
             }) {
             onPermissionNeeded()
+        }
+
+        // Check if Location Services are enabled
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        
+        if (!isGpsEnabled && !isNetworkEnabled) {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Location Services are disabled. GPS speed data will be unavailable.",
+                    actionLabel = "Settings",
+                    duration = androidx.compose.material3.SnackbarDuration.Long
+                ).let { result ->
+                    if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                    }
+                }
+            }
         }
     }
 
@@ -203,9 +233,15 @@ fun MainScreen(
                     // OBD Connection button
                     IconButton(
                         onClick = { 
-                            // Refresh devices list every time the dialog is about to be shown
-                            devices = bluetoothManager.getPairedDevices()
-                            showDeviceDialog = true 
+                            if (!bluetoothManager.isBluetoothEnabled()) {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Please enable Bluetooth to connect to OBD-II")
+                                }
+                            } else {
+                                // Refresh devices list every time the dialog is about to be shown
+                                devices = bluetoothManager.getPairedDevices()
+                                showDeviceDialog = true 
+                            }
                         },
                         modifier = Modifier.size(48.dp)
                     ) {
@@ -279,10 +315,22 @@ fun MainScreen(
             when (currentTab) {
                 "Metrics" -> MetricGridScreen(removeEngineStatus = true)
                 "Trends" -> GraphScreen()
-                "Diagnostics" -> LogViewerScreen(onBackPressed = { selectedTab = 0 })
+                "Diagnostics" -> {
+                    val diagFactory = DiagnosticsViewModelFactory(app.obdService, app.database.diagnosticDao())
+                    val diagViewModel: DiagnosticsViewModel = viewModel(factory = diagFactory)
+                    DiagnosticsScreen(viewModel = diagViewModel)
+                }
                 "History" -> HistoryScreen()
                 else -> MetricGridScreen(removeEngineStatus = true) // Default fallback
             }
+        }
+        
+        // Snackbar Host for Bluetooth alerts
+        Box(modifier = Modifier.fillMaxSize()) {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp)
+            )
         }
     }
 }

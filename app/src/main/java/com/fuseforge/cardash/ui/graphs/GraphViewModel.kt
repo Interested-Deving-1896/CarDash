@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.fuseforge.cardash.data.db.AppDatabase
-import com.fuseforge.cardash.data.db.OBDCombinedReading
+import com.fuseforge.cardash.data.db.TripDataPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,7 +24,7 @@ class GraphViewModel(private val context: Context) : ViewModel() {
     // Available parameters for graphing
     val availableParameters = listOf(
         GraphParameter("RPM", "rpm") { it.rpm },
-        GraphParameter("Speed", "speed", "km/h") { it.speed },
+        GraphParameter("Speed", "speed", "km/h") { it.speedObd },
         GraphParameter("Engine Load", "engineLoad", "%") { it.engineLoad },
         GraphParameter("Coolant Temp", "coolantTemp", "°C") { it.coolantTemp },
         GraphParameter("Fuel Level", "fuelLevel", "%") { it.fuelLevel },
@@ -53,7 +53,7 @@ class GraphViewModel(private val context: Context) : ViewModel() {
     val filteredReadings = combine(_startDate, _endDate) { start, end ->
         Pair(start, end)
     }.flatMapLatest { (start, end) ->
-        dao.getCombinedReadingsByTimeRange(start, end)
+        dao.getTripDataPointsByTimeRange(start, end)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -115,7 +115,7 @@ data class GraphParameter(
     val displayName: String,
     val id: String,
     val unit: String = "",
-    val valueExtractor: (OBDCombinedReading) -> Number?
+    val valueExtractor: (TripDataPoint) -> Number?
 )
 
 // Class to represent a single data point on the graph

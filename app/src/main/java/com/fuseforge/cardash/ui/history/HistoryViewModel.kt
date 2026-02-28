@@ -7,8 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.fuseforge.cardash.CarDashApp
 import com.fuseforge.cardash.data.db.AppDatabase
-import com.fuseforge.cardash.data.db.OBDCombinedReading
-import com.fuseforge.cardash.utils.MockDataGenerator
+import com.fuseforge.cardash.data.db.TripDataPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -17,10 +16,9 @@ import kotlinx.coroutines.launch
 
 class HistoryViewModel(private val context: Context) : ViewModel() {
     private val dao = AppDatabase.getDatabase(context).obdLogDao()
-    private val mockDataGenerator = MockDataGenerator(context)
     
     // Stream of the last 25 readings
-    val lastReadings: StateFlow<List<OBDCombinedReading>> = dao.getLastCombinedReadings(25)
+    val lastReadings: StateFlow<List<TripDataPoint>> = dao.getLastTripDataPoints(25)
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -30,7 +28,7 @@ class HistoryViewModel(private val context: Context) : ViewModel() {
     // List of parameters to display
     val parameters: List<ParameterInfo> = listOf(
         ParameterInfo("RPM", "rpm", "rpm") { it.rpm?.toString() ?: "-" },
-        ParameterInfo("Speed", "speed", "km/h") { it.speed?.toString() ?: "-" },
+        ParameterInfo("Speed", "speed", "km/h") { it.speedObd?.toString() ?: "-" },
         ParameterInfo("Load", "engineLoad", "%") { it.engineLoad?.toString() ?: "-" },
         ParameterInfo("Coolant", "coolantTemp", "°C") { it.coolantTemp?.toString() ?: "-" },
         ParameterInfo("Fuel", "fuelLevel", "%") { it.fuelLevel?.toString() ?: "-" },
@@ -42,15 +40,6 @@ class HistoryViewModel(private val context: Context) : ViewModel() {
             it.batteryVoltage?.let { voltage -> String.format("%.1f", voltage) } ?: "-" 
         }
     )
-    
-    /**
-     * Generate mock data for testing
-     */
-    fun generateMockData() {
-        viewModelScope.launch {
-            mockDataGenerator.generateMockData(25)
-        }
-    }
 }
 
 /**
@@ -60,7 +49,7 @@ data class ParameterInfo(
     val displayName: String,
     val id: String,
     val unit: String,
-    val valueFormatter: (OBDCombinedReading) -> String
+    val valueFormatter: (TripDataPoint) -> String
 )
 
 /**

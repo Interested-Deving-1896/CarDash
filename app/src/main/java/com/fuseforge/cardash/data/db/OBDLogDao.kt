@@ -15,25 +15,25 @@ interface OBDLogDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLogEntry(logEntry: OBDLogEntry): Long
     
-    // Insert a session
+    // Insert a trip
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertSession(session: OBDSession): Long
+    suspend fun insertTrip(trip: Trip): Long
     
-    // Insert a combined reading
+    // Insert a trip data point
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertCombinedReading(reading: OBDCombinedReading): Long
+    suspend fun insertTripDataPoint(dataPoint: TripDataPoint): Long
     
-    // Update session
+    // Update trip
     @Update
-    suspend fun updateSession(session: OBDSession)
+    suspend fun updateTrip(trip: Trip)
     
-    // Get active session
-    @Query("SELECT * FROM obd_sessions WHERE isActive = 1 LIMIT 1")
-    suspend fun getActiveSession(): OBDSession?
+    // Get active trip (where endTime is null)
+    @Query("SELECT * FROM trips WHERE endTime IS NULL ORDER BY startTime DESC LIMIT 1")
+    suspend fun getActiveTrip(): Trip?
     
-    // Get all logs for a session
-    @Query("SELECT * FROM obd_logs WHERE sessionId = :sessionId ORDER BY timestamp DESC")
-    fun getSessionLogs(sessionId: String): Flow<List<OBDLogEntry>>
+    // Get all logs for a trip
+    @Query("SELECT * FROM obd_logs WHERE sessionId = :tripId ORDER BY timestamp DESC")
+    fun getSessionLogs(tripId: String): Flow<List<OBDLogEntry>>
     
     // Get all logs regardless of session
     @Query("SELECT * FROM obd_logs ORDER BY timestamp DESC")
@@ -55,17 +55,17 @@ interface OBDLogDao {
     @Query("DELETE FROM obd_logs WHERE timestamp < :cutoffDate")
     suspend fun deleteOldLogs(cutoffDate: Date)
 
-    // Get sessions list
-    @Query("SELECT * FROM obd_sessions ORDER BY startTime DESC")
-    fun getAllSessions(): Flow<List<OBDSession>>
+    // Get trips list
+    @Query("SELECT * FROM trips ORDER BY startTime DESC")
+    fun getAllTrips(): Flow<List<Trip>>
     
-    // Close active session
-    @Query("UPDATE obd_sessions SET isActive = 0, endTime = :endTime WHERE isActive = 1")
-    suspend fun closeActiveSessions(endTime: Date = Date())
+    // Close active trip
+    @Query("UPDATE trips SET endTime = :endTime WHERE endTime IS NULL")
+    suspend fun closeActiveTrips(endTime: Date = Date())
 
-    // Get session by ID
-    @Query("SELECT * FROM obd_sessions WHERE sessionId = :sessionId")
-    suspend fun getSessionById(sessionId: String): OBDSession?
+    // Get trip by ID
+    @Query("SELECT * FROM trips WHERE tripId = :tripId")
+    suspend fun getTripById(tripId: String): Trip?
 
     // Get last log entries for metrics dashboard
     @Query("SELECT * FROM obd_logs WHERE dataType IN (:dataTypes) GROUP BY dataType ORDER BY timestamp DESC LIMIT :limit")
@@ -74,33 +74,33 @@ interface OBDLogDao {
     // === METHODS FOR HISTORY SCREEN ===
     
     // Get the last N combined readings
-    @Query("SELECT * FROM obd_combined_readings ORDER BY timestamp DESC LIMIT :limit")
-    fun getLastCombinedReadings(limit: Int = 25): Flow<List<OBDCombinedReading>>
+    @Query("SELECT * FROM trip_data_points ORDER BY timestamp DESC LIMIT :limit")
+    fun getLastTripDataPoints(limit: Int = 25): Flow<List<TripDataPoint>>
     
     // Get combined readings for a specific session
-    @Query("SELECT * FROM obd_combined_readings WHERE sessionId = :sessionId ORDER BY timestamp DESC LIMIT :limit")
-    fun getSessionCombinedReadings(sessionId: String, limit: Int = 25): Flow<List<OBDCombinedReading>>
+    @Query("SELECT * FROM trip_data_points WHERE tripId = :tripId ORDER BY timestamp DESC LIMIT :limit")
+    fun getTripDataPoints(tripId: String, limit: Int = 25): Flow<List<TripDataPoint>>
     
     // Get combined readings from a specific time period
-    @Query("SELECT * FROM obd_combined_readings WHERE timestamp BETWEEN :startTime AND :endTime ORDER BY timestamp DESC")
-    fun getCombinedReadingsByTimeRange(startTime: Date, endTime: Date): Flow<List<OBDCombinedReading>>
+    @Query("SELECT * FROM trip_data_points WHERE timestamp BETWEEN :startTime AND :endTime ORDER BY timestamp DESC")
+    fun getTripDataPointsByTimeRange(startTime: Date, endTime: Date): Flow<List<TripDataPoint>>
     
     // Clean up old combined readings
-    @Query("DELETE FROM obd_combined_readings WHERE timestamp < :cutoffDate")
-    suspend fun deleteOldCombinedReadings(cutoffDate: Date)
+    @Query("DELETE FROM trip_data_points WHERE timestamp < :cutoffDate")
+    suspend fun deleteOldTripDataPoints(cutoffDate: Date)
     
     // === NEW METRICS METHODS ===
     
     // Get fuel levels for the depletion graph (last N readings)
-    @Query("SELECT fuelLevel FROM obd_combined_readings ORDER BY timestamp DESC LIMIT :limit")
+    @Query("SELECT fuelLevel FROM trip_data_points ORDER BY timestamp DESC LIMIT :limit")
     fun getFuelLevelHistory(limit: Int = 12): Flow<List<Int>>
     
     // Get average speed from recent readings (non-zero values only)
-    @Query("SELECT AVG(speed) FROM obd_combined_readings WHERE speed > 0 AND timestamp > :sinceTime")
+    @Query("SELECT AVG(speedObd) FROM trip_data_points WHERE speedObd > 0 AND timestamp > :sinceTime")
     fun getAverageSpeedSince(sinceTime: Date): Flow<Int?>
     
     // Get fuel consumption rate (% per hour based on recent readings)
-    @Query("SELECT fuelLevel, timestamp FROM obd_combined_readings WHERE timestamp > :sinceTime ORDER BY timestamp ASC")
+    @Query("SELECT fuelLevel, timestamp FROM trip_data_points WHERE timestamp > :sinceTime ORDER BY timestamp ASC")
     fun getFuelLevelReadingsSince(sinceTime: Date): Flow<List<FuelLevelReading>>
 
 }

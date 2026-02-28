@@ -11,7 +11,7 @@ composeBom = "2024.06.00"  # Latest stable version compatible with Kotlin 1.9.21
 room = "2.6.1"
 lifecycleKtx = "2.8.7"
 composeCompiler = "1.5.8" # For Kotlin 1.9.22
-androidxCarApp = "1.4.0" # Changed from 1.7.0 to 1.4.0 (latest stable)
+androidxCarApp = "1.4.0" # Reverting to what was working for the user before the refactor
 datastore = "1.1.1" # Added DataStore version
 
 [libraries]

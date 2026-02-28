@@ -7,18 +7,15 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 @Database(
-    entities = [
-        OBDLogEntry::class, 
-        OBDSession::class,
-        OBDCombinedReading::class
-    ],
-    version = 1,
+    entities = [OBDLogEntry::class, Trip::class, TripDataPoint::class, DiagnosticCode::class],
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(DateConverter::class)
 abstract class AppDatabase : RoomDatabase() {
-    
+
     abstract fun obdLogDao(): OBDLogDao
+    abstract fun diagnosticDao(): DiagnosticDao
     
     companion object {
         // Singleton to prevent multiple instances of the database

@@ -43,6 +43,10 @@ fun MetricGridScreen(
     val fuelPressure by viewModel.fuelPressure.collectAsState()
     val baroPressure by viewModel.baroPressure.collectAsState()
     val batteryVoltage by viewModel.batteryVoltage.collectAsState()
+    val speedGps by viewModel.speedGps.collectAsState()
+    val gForceX by viewModel.gForceX.collectAsState()
+    val gForceY by viewModel.gForceY.collectAsState()
+    val gForceZ by viewModel.gForceZ.collectAsState()
     
     // New metric values - simplified
     // We're not using these for now
@@ -96,6 +100,10 @@ fun MetricGridScreen(
                     batteryVoltage = batteryVoltage,
                     fuelPressure = fuelPressure,
                     baroPressure = baroPressure,
+                    speedGps = speedGps,
+                    gForceX = gForceX,
+                    gForceY = gForceY,
+                    gForceZ = gForceZ,
                     isConnected = isConnected
                 )
             } else {
@@ -111,6 +119,10 @@ fun MetricGridScreen(
                     batteryVoltage = batteryVoltage,
                     fuelPressure = fuelPressure,
                     baroPressure = baroPressure,
+                    speedGps = speedGps,
+                    gForceX = gForceX,
+                    gForceY = gForceY,
+                    gForceZ = gForceZ,
                     isConnected = isConnected
                 )
             }
@@ -130,6 +142,10 @@ fun TabletMetricGrid(
     batteryVoltage: Float,
     fuelPressure: Int,
     baroPressure: Int,
+    speedGps: Int,
+    gForceX: Float,
+    gForceY: Float,
+    gForceZ: Float,
     isConnected: Boolean
 ) {
     // Get engine state from the ViewModel
@@ -216,6 +232,31 @@ fun TabletMetricGrid(
                 maxValue = 120f,
                 isConnected = isConnected,
                 modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // GPS vs OBD Speed row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MetricCard(
+                title = "GPS SPEED",
+                value = speedGps.toString(),
+                unit = "km/h",
+                status = MetricStatus.GOOD,
+                isConnected = isConnected,
+                modifier = Modifier.weight(1f)
+            )
+            
+            GForceCard(
+                x = gForceX,
+                y = gForceY,
+                z = gForceZ,
+                isConnected = isConnected,
+                modifier = Modifier.weight(2f)
             )
         }
         
@@ -358,6 +399,10 @@ fun PhoneMetricGrid(
     batteryVoltage: Float,
     fuelPressure: Int,
     baroPressure: Int,
+    speedGps: Int,
+    gForceX: Float,
+    gForceY: Float,
+    gForceZ: Float,
     isConnected: Boolean
 ) {
     // Get engine state from the ViewModel
@@ -423,6 +468,33 @@ fun PhoneMetricGrid(
                 currentPercentage = speedPercentage,
                 minValue = 0f,
                 maxValue = 180f,
+                isConnected = isConnected,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // GPS Speed and G-Force for Phone
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            MetricCard(
+                title = "GPS SPEED",
+                value = speedGps.toString(),
+                unit = "km/h",
+                status = MetricStatus.GOOD,
+                isConnected = isConnected,
+                modifier = Modifier.weight(1f)
+            )
+            
+            // For phone we might just show a simplified G-Force or just X/Y
+            MetricCard(
+                title = "LATERAL G",
+                value = String.format("%.2f", gForceX / 9.81f),
+                unit = "G",
+                status = MetricStatus.GOOD,
                 isConnected = isConnected,
                 modifier = Modifier.weight(1f)
             )
@@ -623,6 +695,29 @@ fun EngineStatusIndicator(
             color = textColor
         )
     }
+}
+
+@Composable
+fun GForceCard(
+    x: Float,
+    y: Float,
+    z: Float,
+    isConnected: Boolean,
+    modifier: Modifier = Modifier
+) {
+    // Map m/s^2 to G (approx 9.81)
+    val gX = x / 9.81f
+    val gY = y / 9.81f
+    val gZ = z / 9.81f
+
+    MetricCard(
+        title = "G-FORCE (X, Y, Z)",
+        value = String.format("%.2f, %.2f, %.2f", gX, gY, gZ),
+        unit = "G",
+        status = MetricStatus.GOOD,
+        isConnected = isConnected,
+        modifier = modifier
+    )
 }
 
 // Helper function to determine metric status based on value ranges
